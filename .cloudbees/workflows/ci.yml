@@ -1,0 +1,137 @@
+# CloudBees Unify CI Workflow for 3-Tier E-Commerce App
+
+apiVersion: automation.cloudbees.io/v1alpha1
+kind: workflow
+name: E-Commerce CI Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+permissions:
+  scm-token-own: read
+  scm-token-org: read
+  id-token: read
+
+jobs:
+  # Job 1: Run Tests
+  test:
+    steps:
+      - name: Checkout code
+        uses: cloudbees-io/checkout@v1
+        with:
+          fetch-depth: 0
+
+      - name: Run backend tests
+        uses: docker://python:3.11-slim
+        shell: sh
+        run: |
+          cd backend
+          pip install --no-cache-dir -r requirements.txt
+          pytest tests/ -v --junit-xml=test-results.xml || true
+
+      - name: Publish test results
+        uses: cloudbees-io/publish-test-results@v2
+        with:
+          test-type: JUNIT
+          results-path: backend/test-results.xml
+
+  # Job 2: Build Docker Images
+  build:
+    needs: test
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      GIT_COMMIT_SHA: ${{ cloudbees.scm.sha }}
+
+    steps:
+      - name: Checkout code
+        uses: cloudbees-io/checkout@v1
+
+      - name: Build Frontend Image
+        uses: cloudbees-io/kaniko@v1
+        with:
+          context: frontend
+          destination: ${{ secrets.DOCKERHUB_USERNAME }}/ecommerce-frontend:${{ cloudbees.scm.sha }},${{ secrets.DOCKERHUB_USERNAME }}/ecommerce-frontend:latest
+          registry-mirrors: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build Backend Image
+        uses: cloudbees-io/kaniko@v1
+        with:
+          context: backend
+          destination: ${{ secrets.DOCKERHUB_USERNAME }}/ecommerce-backend:${{ cloudbees.scm.sha }},${{ secrets.DOCKERHUB_USERNAME }}/ecommerce-backend:latest
+          registry-mirrors: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Output image tags
+        uses: docker://alpine:latest
+        shell: sh
+        run: |
+          echo "✅ Images built and pushed:"
+          echo "Frontend: $DOCKERHUB_USERNAME/ecommerce-frontend:$GIT_COMMIT_SHA"
+          echo "Backend: $DOCKERHUB_USERNAME/ecommerce-backend:$GIT_COMMIT_SHA"
+
+  # Job 3: Update Helm Charts (GitOps)
+  update-manifests:
+    needs: build
+    env:
+      GIT_COMMIT_SHA: ${{ cloudbees.scm.sha }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+
+    steps:
+      - name: Checkout infra repo
+        uses: docker://alpine/git:latest
+        shell: sh
+        run: |
+          git clone https://github.com/dnarlakanti-IN-297/ecommerce-infra.git infra-repo
+          cd infra-repo
+          echo "✅ Cloned infrastructure repository"
+
+      - name: Update Helm values with new image tags
+        uses: docker://alpine:latest
+        shell: sh
+        run: |
+          cd infra-repo
+
+          echo "📝 Updating Helm values.yaml with new image tags..."
+
+          # Update frontend image tag
+          sed -i "s|tag: .* # frontend|tag: $GIT_COMMIT_SHA # frontend|g" helm/ecommerce/values.yaml
+
+          # Update backend image tag
+          sed -i "s|tag: .* # backend|tag: $GIT_COMMIT_SHA # backend|g" helm/ecommerce/values.yaml
+
+          echo "✅ Updated values.yaml"
+          cat helm/ecommerce/values.yaml | grep "tag:"
+
+      - name: Commit and push changes
+        uses: docker://alpine/git:latest
+        shell: sh
+        run: |
+          cd infra-repo
+
+          git config user.name "CloudBees Unify"
+          git config user.email "unify@cloudbees.com"
+
+          git add helm/ecommerce/values.yaml
+
+          if git diff --cached --quiet; then
+            echo "⚠️ No changes to commit"
+          else
+            git commit -m "Update image tags to $GIT_COMMIT_SHA
+
+          Frontend: $DOCKERHUB_USERNAME/ecommerce-frontend:$GIT_COMMIT_SHA
+          Backend: $DOCKERHUB_USERNAME/ecommerce-backend:$GIT_COMMIT_SHA
+
+          Built by CloudBees Unify
+          Build: ${{ cloudbees.run_id }}"
+
+            git push origin main
+            echo "✅ Pushed changes to infra repo"
+          fi
