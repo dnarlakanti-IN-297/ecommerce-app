@@ -84,13 +84,15 @@ jobs:
     env:
       GIT_COMMIT_SHA: ${{ cloudbees.scm.sha }}
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Checkout infra repo
         uses: docker://alpine/git:latest
         shell: sh
         run: |
-          git clone https://github.com/dnarlakanti-IN-297/ecommerce-infra.git infra-repo
+          # Clone with authentication
+          git clone https://$GITHUB_TOKEN@github.com/dnarlakanti-IN-297/ecommerce-infra.git infra-repo
           cd infra-repo
           echo "✅ Cloned infrastructure repository"
 
@@ -133,6 +135,8 @@ jobs:
           Built by CloudBees Unify
           Build: ${{ cloudbees.run_id }}"
 
+            # Push with authentication
+            git remote set-url origin https://$GITHUB_TOKEN@github.com/dnarlakanti-IN-297/ecommerce-infra.git
             git push origin main
             echo "✅ Pushed changes to infra repo"
           fi
