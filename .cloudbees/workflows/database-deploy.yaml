@@ -19,6 +19,7 @@ on:
 
 jobs:
   deploy-database:
+    environment: ${{ inputs.environment }}
     env:
       SCHEMA_VERSION: ${{ inputs.artifact-id }}
       ENVIRONMENT: ${{ inputs.environment }}

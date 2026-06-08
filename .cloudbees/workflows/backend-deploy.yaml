@@ -19,6 +19,7 @@ on:
 
 jobs:
   deploy-backend:
+    environment: ${{ inputs.environment }}
     env:
       IMAGE_TAG: ${{ inputs.artifact-id }}
       ENVIRONMENT: ${{ inputs.environment }}
