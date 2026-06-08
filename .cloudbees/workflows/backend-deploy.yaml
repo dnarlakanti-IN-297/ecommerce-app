@@ -13,6 +13,9 @@ on:
         type: string
         required: true
         description: "Target environment (dev, staging, prod)"
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: true
 
 jobs:
   deploy-backend:
