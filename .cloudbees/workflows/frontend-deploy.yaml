@@ -32,12 +32,17 @@ jobs:
           repository: dnarlakanti-IN-297/ecommerce-infra
           ref: main
 
-      - name: Configure GKE credentials
-        uses: cloudbees-io/configure-gke-credentials@v1
+      - name: Configure GCP credentials
+        uses: cloudbees-io/configure-gcp-credentials@v1
         with:
-          cluster-name: ${{ env.GKE_CLUSTER }}
-          location: ${{ env.GKE_ZONE }}
-          project-id: ${{ env.GKE_PROJECT }}
+          workload-identity-provider: "projects/919683507345/locations/global/workloadIdentityPools/cloudbees-pool/providers/cloudbees-provider"
+          service-account: "cloudbees-deployer@unify-enterprise-reference.iam.gserviceaccount.com"
+
+      - name: Configure kubectl
+        uses: docker://google/cloud-sdk:alpine
+        shell: sh
+        run: |
+          gcloud container clusters get-credentials $GKE_CLUSTER --zone=$GKE_ZONE --project=$GKE_PROJECT
 
       - name: Determine namespace
         uses: docker://alpine:latest
